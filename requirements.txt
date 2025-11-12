@@ -1,9 +1,4 @@
-faiss-cpu
-sentence-transformers
-langchain
-langchain-community
-PyMuPDF
-pypdf
-python-docx
-gradio
-llama-cpp-python   # o usa Ollama si prefieres
+gradio>=4.44.0
+google-genai>=0.3.0
+protobuf>=4.25.3
+requests>=2.31.0
