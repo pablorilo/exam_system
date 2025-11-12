@@ -1,0 +1,9 @@
+faiss-cpu
+sentence-transformers
+langchain
+langchain-community
+PyMuPDF
+pypdf
+python-docx
+gradio
+llama-cpp-python   # o usa Ollama si prefieres
