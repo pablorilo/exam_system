@@ -3,6 +3,7 @@ import os
 import re
 import time
 import gradio as gr
+from textwrap import dedent
 from datetime import datetime
 from google import genai
 from google.genai import types
@@ -83,17 +84,39 @@ def chat_fn(message, history):
         log_event(f"📄 Enviando {len(pdf_paths)} PDFs: {list(pdf_map.values())}")
 
         # Prompt
-        prompt_text = (
-            "Eres un asistente experto que responde únicamente con base en los documentos proporcionados.\n\n"
-            "Instrucciones:\n"
-            "- Responde en español.\n"
-            "- Si no hay información suficiente, responde literalmente: "
-            '"No tengo esa información en los documentos".\n'
-            "- Usa el formato: [doc_X, página Y] para indicar fuentes.\n\n"
-            f"Identificadores disponibles: {', '.join(pdf_map.keys())}\n\n"
-            f"Pregunta:\n{message}\n\nRespuesta:"
-        )
+        documentos_disponibles = ", ".join(pdf_map.keys()) if pdf_map else "Ninguno"
+        prompt_text = dedent(
+            f"""\
+            Eres un asistente experto que responde preguntas únicamente usando la información de los documentos proporcionados.
 
+            Instrucciones:
+
+            Responde siempre en español.
+
+            No uses conocimientos previos; solo puedes basarte en los documentos.
+
+            Si la información no está en los documentos, responde exactamente: "No tengo esa información en los documentos".
+
+            Cita siempre la fuente con el formato: [doc_X, página Y].
+
+            Antes de dar la respuesta, realiza un análisis exhaustivo de cada opción comparándola con los documentos.
+
+            Reglas para responder opción múltiple:
+            • Solo una opción es correcta; responde únicamente con esa.
+            • Si una opción es "Todas son correctas" y las otras opciones también lo son según los documentos, selecciona "Todas son correctas".
+            • Si ambas primeras opciones son correctas y existe una tercera "Todas son correctas", selecciona esa.
+            • Si ninguna opción es correcta según los documentos, responde: "No tengo esa información en los documentos".
+
+            IMPORTANTE: responde solo literalmente con la opción correcta, sin agregar nada más. Tu análisis exhaustivo sirve para asegurarte de la respuesta correcta, pero no debe aparecer en la respuesta final.
+
+            Documentos disponibles: {documentos_disponibles}
+
+            Pregunta:
+            {message}
+
+            Respuesta:"""
+        )
+        print(prompt_text)
         # Construir contenido
         contents = [prompt_text]
         for pdf_path in pdf_paths:
@@ -138,7 +161,7 @@ def chat_fn(message, history):
 # ------------------------------
 demo = gr.ChatInterface(
     fn=chat_fn,
-    title="📄 Chat sobre tus Documentos (Gemini OAuth2)",
+    title="📄 Chat sobre curso Controller",
     description="Inicia sesión con Google y pregunta sobre tus PDFs.",
 )
 
