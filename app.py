@@ -107,6 +107,7 @@ def chat_fn(message, history):
             • Si ambas primeras opciones son correctas y existe una tercera "Todas son correctas", selecciona esa.
             • Si ninguna opción es correcta según los documentos, responde: "No tengo esa información en los documentos".
 
+            tambien deberás responder a preguntas en las que sea necesario realizar cálculos, deberas buscar en los documentos la informacion necesaria para realizar el calculo, realizarlo y luego responder la pregunta.
             IMPORTANTE: responde solo literalmente con la opción correcta, sin agregar nada más. Tu análisis exhaustivo sirve para asegurarte de la respuesta correcta, pero no debe aparecer en la respuesta final.
 
             Documentos disponibles: {documentos_disponibles}
