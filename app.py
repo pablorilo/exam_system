@@ -8,14 +8,14 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 from google.auth import default
-from google.cloud import storage  # <-- GCS
+from google.cloud import storage  # <-- NUEVO
 
 # ------------------------------
 # Configuración
 # ------------------------------
 LOG_FILE = "logs_app.txt"
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
-BUCKET_NAME = "controller_docs"  # <-- TU BUCKET
+BUCKET_NAME = "controller_docs"  # <-- TU BUCKET DE GCS
 
 # ------------------------------
 # Logging
@@ -41,7 +41,7 @@ def get_gemini_client():
     creds = authenticate_user()
     client = genai.Client(
         vertexai=True,
-        project="innate-diode-478014-c1",
+        project="innate-diode-478014-c1",  # Tu ID de proyecto
         location="us-central1",
         credentials=creds,
     )
@@ -84,7 +84,7 @@ def chat_fn(message, history):
         log_event(f"💬 Pregunta recibida: {message}")
         start_time = time.time()
 
-        # Cargar PDFs desde GCS
+        # Cargar PDFs desde el bucket
         log_event(f"📥 Cargando PDFs desde GCS: {BUCKET_NAME}")
         pdf_map = load_pdfs_from_gcs(BUCKET_NAME)
 
@@ -92,55 +92,37 @@ def chat_fn(message, history):
 
         documentos_disponibles = ", ".join(pdf_map.keys()) if pdf_map else "Ninguno"
 
-        # Construir prompt
+        # Construcción del prompt
         prompt_text = dedent(
             f"""\
-            Eres un asistente especializado cuya única tarea es encontrar información en los documentos proporcionados.
+            Eres un asistente experto que responde preguntas únicamente usando la información de los documentos proporcionados.
 
-Reglas estrictas de comportamiento:
+            Responde siempre en español.
 
-1. Debes realizar una búsqueda exhaustiva y minuciosa en todos los documentos PDF proporcionados antes de responder.
-2. Solo puedes responder utilizando información que esté explícitamente en los documentos.
-3. Si no puedes confirmar la respuesta directamente y sin ambigüedad en los documentos, responde exactamente:
-   "No tengo esa información en los documentos".
-4. No inventes ni interpretes contenido. No completes, no rellenes, no extrapoles.
-5. No añadas explicaciones, contexto adicional, ni texto innecesario.  
-   Tu salida debe ser solo la respuesta correcta y nada más.
-6. Siempre cita la fuente en formato: [doc_X, página Y].  
-   Si existen varias fuentes, cítalas todas.
-7 Las preguntas podrán ser supuestos sobre situaciones relacionadas con los documentos , es decir, 
-podran exponer preguntas del tipo:
-<pregunta> La empresa familiar Hernández SA, experimenta un crecimiento sostenido que le obliga a formalizar la implementación de un departamento financiero. ¿Cuál es el principal objetivo que debería considerar esta PYME para este departamento?</pregunta>
-En estos casos deberás buscar la información en los documentos y responder la pregunta de manera clara.
+        Si la información no está en los documentos, responde exactamente:
+            "No tengo esa información en los documentos".
 
-Regla especial para preguntas de opciones múltiples:
 
-8. Si la pregunta lista opciones del estilo:
-      • Afirmación 1  
-      • Afirmación 2  
-      • Todas son correctas  
-   Y los documentos indican que todas las opciones son correctas o verdaderas, debes responder exactamente:
-   "Todas son correctas"
-   junto con las citas asociadas.
-9. Si no puedes confirmar que todas son correctas según los documentos, entonces responde la opción correcta correspondiente; y si no puedes confirmarla, responde:
-   "No tengo esa información en los documentos".
+        Tu respuesta debe incluir únicamente:
+            - La respuesta correcta basada en los documentos (sin explicaciones)
+            - Las citas correspondientes en el formato indicado
+            Regla especial para preguntas de opciones múltiples:
 
-Tu respuesta final debe incluir únicamente:
-- La respuesta correcta basada en los documentos (sin explicaciones)
-- Las citas correspondientes en el formato indicado
-ta siempre la fuente con el formato: [doc_X, página Y].
+        Si la pregunta lista opciones del estilo:
+            • Afirmación 1  
+            • Afirmación 2  
+            • Todas son correctas  
+        Y los documentos indican que todas las opciones son correctas o verdaderas, debes responder exactamente:
+        "Todas son correctas"
+        junto con las citas asociadas.
 
-            Documentos disponibles: {documentos_disponibles}
-
-            Pregunta:
-            {message}
-
-            Respuesta:"""
+        Puede ser que alguna pregunta requiera realizar cálculos para obtener la respuesta correcta. Si es el caso, debes realizar los cálculos buscando las formulas en los documentos y responder la pregunta con la respuesta correcta.
+            """
         )
 
         contents = [prompt_text]
 
-        # Adjuntar PDFs
+        # Adjuntar PDFs al prompt
         for doc_id, data in pdf_map.items():
             contents.append(
                 types.Part.from_bytes(
@@ -159,27 +141,18 @@ ta siempre la fuente con el formato: [doc_X, página Y].
         elapsed = round(time.time() - start_time, 2)
         answer_clean = response.text.strip()
 
-        log_event(f"✅ Respuesta recibida ({len(answer_clean)} chars, {elapsed}s)")
+        log_event(f"✅ Respuesta recibida ({len(answer_clean)} chars, {elapsed}s):\n{answer_clean}")
 
-        # Reconocer referencias tipo [doc_X, página Y]
+        # Buscar referencias [doc_X, página Y]
         matches = re.findall(r"(doc_\d+).*?(\d+)", answer_clean, flags=re.IGNORECASE)
 
-        # Crear enlaces clickeables públicos
-        sources_list = []
-        for doc_id, page in matches:
-            if doc_id in pdf_map:
-                filename = pdf_map[doc_id]["name"]
+        sources_list = [
+            f"{pdf_map[doc_id]['name']} - pág {page}"
+            for doc_id, page in matches if doc_id in pdf_map
+        ]
 
-                # Enlace público (porque tus PDFs son públicos)
-                url = f"https://storage.googleapis.com/{BUCKET_NAME}/{filename}"
-
-                sources_list.append(
-                    f"[{filename} - pág {page}]({url})"
-                )
-
-        # Agregar sección de fuentes clickeables
         if sources_list:
-            answer_clean += "\n\n### Fuentes:\n" + "\n".join(sources_list)
+            answer_clean = f"{answer_clean}\n\nFuentes:\n" + "\n".join(sources_list)
 
         return answer_clean
 
