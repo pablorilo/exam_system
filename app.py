@@ -1,4 +1,4 @@
-# app.py (Gemini + PDFs para Cloud Run)
+# app.py (Gemini + PDFs desde GCS para Cloud Run)
 import os
 import re
 import time
@@ -8,13 +8,14 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 from google.auth import default
+from google.cloud import storage  # <-- NUEVO
 
 # ------------------------------
 # Configuración
 # ------------------------------
-PDF_DIR = "docs"
 LOG_FILE = "logs_app.txt"
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
+BUCKET_NAME = "controller_docs"  # <-- TU BUCKET DE GCS
 
 # ------------------------------
 # Logging
@@ -49,6 +50,30 @@ def get_gemini_client():
 client = get_gemini_client()
 
 # ------------------------------
+# Cargar PDFs desde GCS
+# ------------------------------
+def load_pdfs_from_gcs(bucket_name: str, prefix: str = ""):
+    try:
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(bucket_name)
+
+        blobs = bucket.list_blobs(prefix=prefix)
+        pdf_blobs = [b for b in blobs if b.name.lower().endswith(".pdf")]
+
+        pdf_map = {}
+        for i, blob in enumerate(pdf_blobs):
+            pdf_bytes = blob.download_as_bytes()
+            pdf_map[f"doc_{i+1}"] = {
+                "name": blob.name,
+                "bytes": pdf_bytes
+            }
+
+        return pdf_map
+    except Exception as e:
+        log_event(f"❌ Error cargando PDFs desde GCS: {str(e)}")
+        return {}
+
+# ------------------------------
 # Función principal del chat
 # ------------------------------
 def chat_fn(message, history):
@@ -59,13 +84,15 @@ def chat_fn(message, history):
         log_event(f"💬 Pregunta recibida: {message}")
         start_time = time.time()
 
-        # Recuperar PDFs
-        pdf_files = [f for f in os.listdir(PDF_DIR) if f.lower().endswith(".pdf")]
-        pdf_paths = [os.path.join(PDF_DIR, f) for f in pdf_files]
-        pdf_map = {f"doc_{i+1}": pdf_paths[i] for i in range(len(pdf_paths))}
-        log_event(f"📄 Enviando {len(pdf_paths)} PDFs: {list(pdf_map.values())}")
+        # Cargar PDFs desde el bucket
+        log_event(f"📥 Cargando PDFs desde GCS: {BUCKET_NAME}")
+        pdf_map = load_pdfs_from_gcs(BUCKET_NAME)
+
+        log_event(f"📄 PDFs detectados: {list(v['name'] for v in pdf_map.values())}")
 
         documentos_disponibles = ", ".join(pdf_map.keys()) if pdf_map else "Ninguno"
+
+        # Construcción del prompt
         prompt_text = dedent(
             f"""\
             Eres un asistente experto que responde preguntas únicamente usando la información de los documentos proporcionados.
@@ -86,16 +113,16 @@ def chat_fn(message, history):
         )
 
         contents = [prompt_text]
-        for pdf_path in pdf_paths:
-            with open(pdf_path, "rb") as f:
-                pdf_bytes = f.read()
+
+        # Adjuntar PDFs al prompt
+        for doc_id, data in pdf_map.items():
             contents.append(
                 types.Part.from_bytes(
-                    data=pdf_bytes,
+                    data=data["bytes"],
                     mime_type="application/pdf"
                 )
             )
-            log_event(f"📤 Adjuntado PDF: {pdf_path} ({len(pdf_bytes)} bytes)")
+            log_event(f"📤 Adjuntado PDF desde GCS: {data['name']} ({len(data['bytes'])} bytes)")
 
         # Llamada a Gemini
         response = client.models.generate_content(
@@ -105,12 +132,17 @@ def chat_fn(message, history):
 
         elapsed = round(time.time() - start_time, 2)
         answer_clean = response.text.strip()
+
         log_event(f"✅ Respuesta recibida ({len(answer_clean)} chars, {elapsed}s):\n{answer_clean}")
 
-        # Buscar referencias
+        # Buscar referencias [doc_X, página Y]
         matches = re.findall(r"(doc_\d+).*?(\d+)", answer_clean, flags=re.IGNORECASE)
-        sources_list = [f"{os.path.basename(pdf_map[doc_id])} - pág {page}"
-                        for doc_id, page in matches if doc_id in pdf_map]
+
+        sources_list = [
+            f"{pdf_map[doc_id]['name']} - pág {page}"
+            for doc_id, page in matches if doc_id in pdf_map
+        ]
+
         if sources_list:
             answer_clean = f"{answer_clean}\n\nFuentes:\n" + "\n".join(sources_list)
 
@@ -126,7 +158,7 @@ def chat_fn(message, history):
 demo = gr.ChatInterface(
     fn=chat_fn,
     title="📄 Chat sobre curso Controller",
-    description="Pregunta sobre los PDFs cargados usando Gemini.",
+    description="Pregunta sobre los PDFs cargados desde Cloud Storage usando Gemini.",
 )
 
 if __name__ == "__main__":
