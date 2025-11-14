@@ -88,7 +88,7 @@ def chat_fn(message, history):
         log_event(f"📄 PDFs detectados: {list(v['name'] for v in pdf_map.values())}")
 
         # ------------------------------
-        # Prompt reforzado para búsqueda exhaustiva
+        # Prompt reforzado
         # ------------------------------
         prompt_text = dedent(
             """
@@ -104,22 +104,22 @@ def chat_fn(message, history):
             4. Cita las fuentes usando el formato: [doc_X, página Y]. Si hay varias, cítalas todas.
             5. Para preguntas de opciones múltiples con la opción “Todas son correctas”, si todas las opciones son correctas según los PDFs, responde exactamente:
                "Todas son correctas".
-            6. Si es necesario realizar cálculos, busca las fórmulas en los PDFs y devuelve solo la respuesta correcta.
+            6. Si es necesario, realiza cálculos usando fórmulas encontradas en los PDFs y devuelve solo la respuesta correcta.
             """
         )
 
         # ------------------------------
-        # Construcción de Parts compatible con cualquier versión
+        # Construcción de Parts compatible con la versión actual
         # ------------------------------
         contents = [
-            types.Part(text=prompt_text),
-            types.Part(text=message)
+            types.Part.from_text(prompt_text),
+            types.Part.from_text(message)
         ]
 
         for doc_id, data in pdf_map.items():
             contents.append(
-                types.Part(
-                    blob=data["bytes"],
+                types.Part.from_bytes(
+                    data=data["bytes"],
                     mime_type="application/pdf"
                 )
             )
@@ -160,7 +160,7 @@ def chat_fn(message, history):
 # ------------------------------
 demo = gr.ChatInterface(
     fn=chat_fn,
-    title="📄 Chat sobre curso Controller v .0",
+    title="📄 Chat sobre curso Controller v 2.0",
     description="Pregunta sobre los PDFs cargados desde Cloud Storage usando Gemini.",
 )
 
