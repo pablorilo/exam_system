@@ -17,7 +17,6 @@ LOG_FILE = "logs_app.txt"
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 BUCKET_NAME = "controller_docs"
 
-
 # ------------------------------
 # Logging
 # ------------------------------
@@ -27,7 +26,6 @@ def log_event(event: str):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(timestamp + "\n")
 
-
 # ------------------------------
 # Autenticación en Cloud Run
 # ------------------------------
@@ -35,7 +33,6 @@ def authenticate_user():
     creds, project = default(scopes=SCOPES)
     log_event(f"✅ Credenciales predeterminadas de Google Cloud (proyecto: {project})")
     return creds
-
 
 # ------------------------------
 # Cliente Gemini autenticado
@@ -50,9 +47,7 @@ def get_gemini_client():
     )
     return client
 
-
 client = get_gemini_client()
-
 
 # ------------------------------
 # Cargar PDFs desde GCS
@@ -61,7 +56,6 @@ def load_pdfs_from_gcs(bucket_name: str, prefix: str = ""):
     try:
         storage_client = storage.Client()
         bucket = storage_client.bucket(bucket_name)
-
         blobs = bucket.list_blobs(prefix=prefix)
         pdf_blobs = [b for b in blobs if b.name.lower().endswith(".pdf")]
 
@@ -73,13 +67,10 @@ def load_pdfs_from_gcs(bucket_name: str, prefix: str = ""):
                 "bytes": pdf_bytes
             }
             log_event(f"📄 PDF cargado: {blob.name} ({len(pdf_bytes)} bytes)")
-
         return pdf_map
-
     except Exception as e:
         log_event(f"❌ Error cargando PDFs desde GCS: {str(e)}")
         return {}
-
 
 # ------------------------------
 # Chat principal
@@ -102,35 +93,33 @@ def chat_fn(message, history):
         prompt_text = dedent(
             """
             Eres un asistente experto que responde preguntas únicamente usando la información contenida en los documentos PDF adjuntos.
-            No puedes usar información externa.
+            Tu única fuente de información son los PDFs. No puedes usar información externa.
 
             Reglas estrictas:
             1. Solo responde en español.
             2. Si la información no está en los documentos, responde EXACTAMENTE:
                "No tengo esa información en los documentos".
-            3. No agregues explicaciones, contexto adicional ni texto innecesario.
+            3. No agregues explicaciones ni texto innecesario.
                La respuesta debe ser solo la correcta según los documentos y las citas.
             4. Cita las fuentes usando el formato: [doc_X, página Y]. Si hay varias, cítalas todas.
-            5. Para preguntas de opciones múltiples con la opción “Todas son correctas”, si todas las opciones son correctas según los documentos, responde exactamente:
+            5. Para preguntas de opciones múltiples con la opción “Todas son correctas”, si todas las opciones son correctas según los PDFs, responde exactamente:
                "Todas son correctas".
             6. Si es necesario realizar cálculos, busca las fórmulas en los PDFs y devuelve solo la respuesta correcta.
-
-            Adjunta todos los PDFs como fuentes obligatorias de información.
             """
         )
 
         # ------------------------------
-        # Construcción de Parts para Gemini
+        # Construcción de Parts compatible con cualquier versión
         # ------------------------------
         contents = [
-            types.Part.from_text(prompt_text),
-            types.Part.from_text(message)
+            types.Part(text=prompt_text),
+            types.Part(text=message)
         ]
 
         for doc_id, data in pdf_map.items():
             contents.append(
-                types.Part.from_bytes(
-                    data=data["bytes"],
+                types.Part(
+                    blob=data["bytes"],
                     mime_type="application/pdf"
                 )
             )
@@ -166,13 +155,12 @@ def chat_fn(message, history):
         log_event(f"❌ Error en chat_fn: {str(e)}")
         return f"Error: {str(e)}"
 
-
 # ------------------------------
 # Interfaz Gradio
 # ------------------------------
 demo = gr.ChatInterface(
     fn=chat_fn,
-    title="📄 Chat sobre curso Controller v 2.0",
+    title="📄 Chat sobre curso Controller v .0",
     description="Pregunta sobre los PDFs cargados desde Cloud Storage usando Gemini.",
 )
 
