@@ -109,11 +109,11 @@ def chat_fn(message, history):
         )
 
         # ------------------------------
-        # Construcción de Parts compatible con la versión actual
+        # Construcción de Parts compatible
         # ------------------------------
         contents = [
-            types.Part.from_text(prompt_text),
-            types.Part.from_text(message)
+            types.Part(text=prompt_text),   # Instrucciones
+            types.Part(text=message)        # Pregunta concreta
         ]
 
         for doc_id, data in pdf_map.items():
@@ -160,7 +160,7 @@ def chat_fn(message, history):
 # ------------------------------
 demo = gr.ChatInterface(
     fn=chat_fn,
-    title="📄 Chat sobre curso Controller v 2.0",
+    title="📄 Chat sobre curso Controller v2.0",
     description="Pregunta sobre los PDFs cargados desde Cloud Storage usando Gemini.",
 )
 
