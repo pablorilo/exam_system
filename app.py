@@ -8,14 +8,15 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 from google.auth import default
-from google.cloud import storage  # <-- NUEVO
+from google.cloud import storage
 
 # ------------------------------
 # Configuración
 # ------------------------------
 LOG_FILE = "logs_app.txt"
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
-BUCKET_NAME = "controller_docs"  # <-- TU BUCKET DE GCS
+BUCKET_NAME = "controller_docs"
+
 
 # ------------------------------
 # Logging
@@ -26,13 +27,15 @@ def log_event(event: str):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(timestamp + "\n")
 
+
 # ------------------------------
-# Autenticación (automática en Cloud Run)
+# Autenticación en Cloud Run
 # ------------------------------
 def authenticate_user():
     creds, project = default(scopes=SCOPES)
-    log_event(f"✅ Usando credenciales predeterminadas de Google Cloud (proyecto: {project})")
+    log_event(f"✅ Credenciales predeterminadas de Google Cloud (proyecto: {project})")
     return creds
+
 
 # ------------------------------
 # Cliente Gemini autenticado
@@ -41,16 +44,18 @@ def get_gemini_client():
     creds = authenticate_user()
     client = genai.Client(
         vertexai=True,
-        project="innate-diode-478014-c1",  # Tu ID de proyecto
+        project="innate-diode-478014-c1",
         location="us-central1",
         credentials=creds,
     )
     return client
 
+
 client = get_gemini_client()
 
+
 # ------------------------------
-# Cargar PDFs desde GCS
+# Cargar PDFs desde Google Cloud Storage
 # ------------------------------
 def load_pdfs_from_gcs(bucket_name: str, prefix: str = ""):
     try:
@@ -67,14 +72,17 @@ def load_pdfs_from_gcs(bucket_name: str, prefix: str = ""):
                 "name": blob.name,
                 "bytes": pdf_bytes
             }
+            log_event(f"📄 PDF cargado: {blob.name} ({len(pdf_bytes)} bytes)")
 
         return pdf_map
+
     except Exception as e:
         log_event(f"❌ Error cargando PDFs desde GCS: {str(e)}")
         return {}
 
+
 # ------------------------------
-# Función principal del chat
+# Chat principal
 # ------------------------------
 def chat_fn(message, history):
     if not message.strip():
@@ -84,45 +92,41 @@ def chat_fn(message, history):
         log_event(f"💬 Pregunta recibida: {message}")
         start_time = time.time()
 
-        # Cargar PDFs desde el bucket
+        # Cargar PDFs desde GCS
         log_event(f"📥 Cargando PDFs desde GCS: {BUCKET_NAME}")
         pdf_map = load_pdfs_from_gcs(BUCKET_NAME)
-
         log_event(f"📄 PDFs detectados: {list(v['name'] for v in pdf_map.values())}")
 
-        documentos_disponibles = ", ".join(pdf_map.keys()) if pdf_map else "Ninguno"
-
-        # Construcción del prompt
+        # ------------------------------
+        # PROMPT
+        # ------------------------------
         prompt_text = dedent(
-            f"""\
-            Eres un asistente experto que responde preguntas únicamente usando la información de los documentos proporcionados.
+            """
+            Eres un asistente experto que responde preguntas únicamente usando la información 
+            contenida en los documentos adjuntos.
 
-            Responde siempre en español.
-
-        Si la información no está en los documentos, responde exactamente:
-            "No tengo esa información en los documentos".
-
-
-        Tu respuesta debe incluir únicamente:
-            - La respuesta correcta basada en los documentos (sin explicaciones)
-            - Las citas correspondientes en el formato indicado
-            Regla especial para preguntas de opciones múltiples:
-
-        Si la pregunta lista opciones del estilo:
-            • Afirmación 1  
-            • Afirmación 2  
-            • Todas son correctas  
-        Y los documentos indican que todas las opciones son correctas o verdaderas, debes responder exactamente:
-        "Todas son correctas"
-        junto con las citas asociadas.
-
-        Puede ser que alguna pregunta requiera realizar cálculos para obtener la respuesta correcta. Si es el caso, debes realizar los cálculos buscando las formulas en los documentos y responder la pregunta con la respuesta correcta.
+            Reglas estrictas:
+            - Responde solo en español.
+            - Si la información no está en los documentos, responde EXACTAMENTE:
+              "No tengo esa información en los documentos".
+            - No expliques nada. Solo la respuesta correcta y las citas.
+            - Si una pregunta de opciones múltiples tiene la opción 
+              “Todas son correctas” y todas son verdaderas según los documentos,
+              responde exactamente:
+              "Todas son correctas".
+            - Si para responder es necesario realizar cálculos, busca en los documentos 
+              las fórmulas y realiza el cálculo.
             """
         )
 
-        contents = [prompt_text]
+        # ------------------------------
+        # Construcción correcta de Parts
+        # ------------------------------
+        contents = [
+            types.Part.from_text(prompt_text),
+            types.Part.from_text(message)
+        ]
 
-        # Adjuntar PDFs al prompt
         for doc_id, data in pdf_map.items():
             contents.append(
                 types.Part.from_bytes(
@@ -130,35 +134,38 @@ def chat_fn(message, history):
                     mime_type="application/pdf"
                 )
             )
-            log_event(f"📤 Adjuntado PDF desde GCS: {data['name']} ({len(data['bytes'])} bytes)")
+            log_event(f"📤 PDF enviado a Gemini: {data['name']}")
 
-        # Llamada a Gemini
+        # ------------------------------
+        # Llamada a Gemini (sin OCR, ya que PDFs no son escaneados)
+        # ------------------------------
         response = client.models.generate_content(
             model="gemini-2.0-flash-001",
-            contents=contents,
+            contents=contents
         )
 
         elapsed = round(time.time() - start_time, 2)
-        answer_clean = response.text.strip()
+        answer = response.text.strip()
+        log_event(f"✅ Respuesta recibida ({len(answer)} chars, {elapsed}s)\n{answer}")
 
-        log_event(f"✅ Respuesta recibida ({len(answer_clean)} chars, {elapsed}s):\n{answer_clean}")
-
-        # Buscar referencias [doc_X, página Y]
-        matches = re.findall(r"(doc_\d+).*?(\d+)", answer_clean, flags=re.IGNORECASE)
-
-        sources_list = [
+        # ------------------------------
+        # Extraer citas
+        # ------------------------------
+        matches = re.findall(r"(doc_\d+).*?(\d+)", answer, flags=re.IGNORECASE)
+        sources = [
             f"{pdf_map[doc_id]['name']} - pág {page}"
             for doc_id, page in matches if doc_id in pdf_map
         ]
 
-        if sources_list:
-            answer_clean = f"{answer_clean}\n\nFuentes:\n" + "\n".join(sources_list)
+        if sources:
+            answer += "\n\nFuentes:\n" + "\n".join(sources)
 
-        return answer_clean
+        return answer
 
     except Exception as e:
         log_event(f"❌ Error en chat_fn: {str(e)}")
         return f"Error: {str(e)}"
+
 
 # ------------------------------
 # Interfaz Gradio
