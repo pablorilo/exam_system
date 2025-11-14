@@ -134,7 +134,7 @@ def chat_fn(message, history):
         # Llamada a Gemini
         # ------------------------------
         response = client.models.generate_content(
-            model="gemini-2.0-flash-001",
+            model="gemini-2.5-flash",
             contents=contents
         )
 
@@ -165,7 +165,7 @@ def chat_fn(message, history):
 # ------------------------------
 demo = gr.ChatInterface(
     fn=chat_fn,
-    title="📄 Chat sobre curso Controller v6.0",
+    title="📄 Chat sobre curso Controller v7.0",
     description="Pregunta sobre los PDFs cargados desde Cloud Storage usando Gemini.",
 )
 
