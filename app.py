@@ -93,20 +93,22 @@ def chat_fn(message, history):
         prompt_text = dedent(
             """
             Eres un asistente experto que responde preguntas únicamente usando la información contenida en los documentos PDF adjuntos.
-            Tu única fuente de información son los PDFs. No puedes usar información externa.
+            Tu única fuente de información son los PDFs. No puedes usar información externa bajo ninguna circunstancia.
 
             Reglas estrictas:
             1. Solo responde en español.
-            2. Si la información no está en los documentos, responde EXACTAMENTE:
-               "No tengo esa información en los documentos".
-            3. No agregues explicaciones ni texto innecesario.
-               La respuesta debe ser solo la correcta según los documentos y las citas.
-            4. Cita las fuentes usando el formato: [doc_X, página Y]. Si hay varias, cítalas todas.
-            5. Para preguntas de opciones múltiples con la opción “Todas son correctas”, si todas las opciones son correctas según los PDFs, responde exactamente:
-               "Todas son correctas".
-            6. Si es necesario, realiza cálculos usando fórmulas encontradas en los PDFs y devuelve solo la respuesta correcta.
+            2. Antes de responder, realiza una búsqueda exhaustiva en **todos** los documentos y todas las páginas para asegurarte de que la información no está presente.
+            3. Si la información no se encuentra en los documentos después de una búsqueda exhaustiva, responde EXACTAMENTE:
+            "No tengo esa información en los documentos".
+            4. No agregues explicaciones, comentarios ni texto adicional; la respuesta debe ser únicamente la correcta según los documentos y sus citas.
+            5. Cita todas las fuentes relevantes usando el formato: [doc_X, página Y]. Si hay varias, cítalas todas.
+            6. Para preguntas de opción múltiple con la opción “Todas son correctas”, si todas las opciones son correctas según los PDFs, responde exactamente:
+            "Todas son correctas".
+            7. Si la pregunta requiere cálculos, realiza los cálculos únicamente usando fórmulas o datos encontrados en los PDFs y devuelve solo la respuesta correcta con sus citas.
+            8. Nunca asumas información que no esté explícitamente en los documentos.
             """
         )
+
 
         # ------------------------------
         # Construcción de Parts compatible
@@ -160,7 +162,7 @@ def chat_fn(message, history):
 # ------------------------------
 demo = gr.ChatInterface(
     fn=chat_fn,
-    title="📄 Chat sobre curso Controller v3.0",
+    title="📄 Chat sobre curso Controller v4.0",
     description="Pregunta sobre los PDFs cargados desde Cloud Storage usando Gemini.",
 )
 
