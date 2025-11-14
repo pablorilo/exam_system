@@ -55,7 +55,7 @@ client = get_gemini_client()
 
 
 # ------------------------------
-# Cargar PDFs desde Google Cloud Storage
+# Cargar PDFs desde GCS
 # ------------------------------
 def load_pdfs_from_gcs(bucket_name: str, prefix: str = ""):
     try:
@@ -93,34 +93,34 @@ def chat_fn(message, history):
         start_time = time.time()
 
         # Cargar PDFs desde GCS
-        log_event(f"📥 Cargando PDFs desde GCS: {BUCKET_NAME}")
         pdf_map = load_pdfs_from_gcs(BUCKET_NAME)
         log_event(f"📄 PDFs detectados: {list(v['name'] for v in pdf_map.values())}")
 
         # ------------------------------
-        # PROMPT
+        # Prompt reforzado para búsqueda exhaustiva
         # ------------------------------
         prompt_text = dedent(
             """
-            Eres un asistente experto que responde preguntas únicamente usando la información 
-            contenida en los documentos adjuntos.
+            Eres un asistente experto que responde preguntas únicamente usando la información contenida en los documentos PDF adjuntos.
+            No puedes usar información externa.
 
             Reglas estrictas:
-            - Responde solo en español.
-            - Si la información no está en los documentos, responde EXACTAMENTE:
-              "No tengo esa información en los documentos".
-            - No expliques nada. Solo la respuesta correcta y las citas.
-            - Si una pregunta de opciones múltiples tiene la opción 
-              “Todas son correctas” y todas son verdaderas según los documentos,
-              responde exactamente:
-              "Todas son correctas".
-            - Si para responder es necesario realizar cálculos, busca en los documentos 
-              las fórmulas y realiza el cálculo.
+            1. Solo responde en español.
+            2. Si la información no está en los documentos, responde EXACTAMENTE:
+               "No tengo esa información en los documentos".
+            3. No agregues explicaciones, contexto adicional ni texto innecesario.
+               La respuesta debe ser solo la correcta según los documentos y las citas.
+            4. Cita las fuentes usando el formato: [doc_X, página Y]. Si hay varias, cítalas todas.
+            5. Para preguntas de opciones múltiples con la opción “Todas son correctas”, si todas las opciones son correctas según los documentos, responde exactamente:
+               "Todas son correctas".
+            6. Si es necesario realizar cálculos, busca las fórmulas en los PDFs y devuelve solo la respuesta correcta.
+
+            Adjunta todos los PDFs como fuentes obligatorias de información.
             """
         )
 
         # ------------------------------
-        # Construcción correcta de Parts
+        # Construcción de Parts para Gemini
         # ------------------------------
         contents = [
             types.Part.from_text(prompt_text),
@@ -137,7 +137,7 @@ def chat_fn(message, history):
             log_event(f"📤 PDF enviado a Gemini: {data['name']}")
 
         # ------------------------------
-        # Llamada a Gemini (sin OCR, ya que PDFs no son escaneados)
+        # Llamada a Gemini
         # ------------------------------
         response = client.models.generate_content(
             model="gemini-2.0-flash-001",
@@ -149,7 +149,7 @@ def chat_fn(message, history):
         log_event(f"✅ Respuesta recibida ({len(answer)} chars, {elapsed}s)\n{answer}")
 
         # ------------------------------
-        # Extraer citas
+        # Extraer citas y mostrar fuentes
         # ------------------------------
         matches = re.findall(r"(doc_\d+).*?(\d+)", answer, flags=re.IGNORECASE)
         sources = [
@@ -172,7 +172,7 @@ def chat_fn(message, history):
 # ------------------------------
 demo = gr.ChatInterface(
     fn=chat_fn,
-    title="📄 Chat sobre curso Controller",
+    title="📄 Chat sobre curso Controller v 2.0",
     description="Pregunta sobre los PDFs cargados desde Cloud Storage usando Gemini.",
 )
 
