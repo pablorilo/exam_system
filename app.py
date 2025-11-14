@@ -8,14 +8,14 @@ from datetime import datetime
 from google import genai
 from google.genai import types
 from google.auth import default
-from google.cloud import storage  # <-- NUEVO
+from google.cloud import storage  # <-- GCS
 
 # ------------------------------
 # Configuración
 # ------------------------------
 LOG_FILE = "logs_app.txt"
 SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
-BUCKET_NAME = "controller_docs"  # <-- TU BUCKET DE GCS
+BUCKET_NAME = "controller_docs"  # <-- TU BUCKET
 
 # ------------------------------
 # Logging
@@ -41,7 +41,7 @@ def get_gemini_client():
     creds = authenticate_user()
     client = genai.Client(
         vertexai=True,
-        project="innate-diode-478014-c1",  # Tu ID de proyecto
+        project="innate-diode-478014-c1",
         location="us-central1",
         credentials=creds,
     )
@@ -84,7 +84,7 @@ def chat_fn(message, history):
         log_event(f"💬 Pregunta recibida: {message}")
         start_time = time.time()
 
-        # Cargar PDFs desde el bucket
+        # Cargar PDFs desde GCS
         log_event(f"📥 Cargando PDFs desde GCS: {BUCKET_NAME}")
         pdf_map = load_pdfs_from_gcs(BUCKET_NAME)
 
@@ -92,17 +92,41 @@ def chat_fn(message, history):
 
         documentos_disponibles = ", ".join(pdf_map.keys()) if pdf_map else "Ninguno"
 
-        # Construcción del prompt
+        # Construir prompt
         prompt_text = dedent(
             f"""\
-            Eres un asistente experto que responde preguntas únicamente usando la información de los documentos proporcionados.
+            Eres un asistente especializado cuya única tarea es encontrar información en los documentos proporcionados.
 
-            Responde siempre en español.
+Reglas estrictas de comportamiento:
 
-            Si la información no está en los documentos, responde exactamente:
-            "No tengo esa información en los documentos".
+1. Debes realizar una búsqueda exhaustiva y minuciosa en todos los documentos PDF proporcionados antes de responder.
+2. Solo puedes responder utilizando información que esté explícitamente en los documentos.
+3. Si no puedes confirmar la respuesta directamente y sin ambigüedad en los documentos, responde exactamente:
+   "No tengo esa información en los documentos".
+4. No inventes ni interpretes contenido. No completes, no rellenes, no extrapoles.
+5. No añadas explicaciones, contexto adicional, ni texto innecesario.  
+   Tu salida debe ser solo la respuesta correcta y nada más.
+6. Siempre cita la fuente en formato: [doc_X, página Y].  
+   Si existen varias fuentes, cítalas todas.
+7. Si la pregunta no tiene soporte literal en los documentos, usa estrictamente:
+   "No tengo esa información en los documentos".
 
-            Cita siempre la fuente con el formato: [doc_X, página Y].
+Regla especial para preguntas de opciones múltiples:
+
+8. Si la pregunta lista opciones del estilo:
+      • Afirmación 1  
+      • Afirmación 2  
+      • Todas son correctas  
+   Y los documentos indican que todas las opciones son correctas o verdaderas, debes responder exactamente:
+   "Todas son correctas"
+   junto con las citas asociadas.
+9. Si no puedes confirmar que todas son correctas según los documentos, entonces responde la opción correcta correspondiente; y si no puedes confirmarla, responde:
+   "No tengo esa información en los documentos".
+
+Tu respuesta final debe incluir únicamente:
+- La respuesta correcta basada en los documentos (sin explicaciones)
+- Las citas correspondientes en el formato indicado
+ta siempre la fuente con el formato: [doc_X, página Y].
 
             Documentos disponibles: {documentos_disponibles}
 
@@ -114,7 +138,7 @@ def chat_fn(message, history):
 
         contents = [prompt_text]
 
-        # Adjuntar PDFs al prompt
+        # Adjuntar PDFs
         for doc_id, data in pdf_map.items():
             contents.append(
                 types.Part.from_bytes(
@@ -133,18 +157,27 @@ def chat_fn(message, history):
         elapsed = round(time.time() - start_time, 2)
         answer_clean = response.text.strip()
 
-        log_event(f"✅ Respuesta recibida ({len(answer_clean)} chars, {elapsed}s):\n{answer_clean}")
+        log_event(f"✅ Respuesta recibida ({len(answer_clean)} chars, {elapsed}s)")
 
-        # Buscar referencias [doc_X, página Y]
+        # Reconocer referencias tipo [doc_X, página Y]
         matches = re.findall(r"(doc_\d+).*?(\d+)", answer_clean, flags=re.IGNORECASE)
 
-        sources_list = [
-            f"{pdf_map[doc_id]['name']} - pág {page}"
-            for doc_id, page in matches if doc_id in pdf_map
-        ]
+        # Crear enlaces clickeables públicos
+        sources_list = []
+        for doc_id, page in matches:
+            if doc_id in pdf_map:
+                filename = pdf_map[doc_id]["name"]
 
+                # Enlace público (porque tus PDFs son públicos)
+                url = f"https://storage.googleapis.com/{BUCKET_NAME}/{filename}"
+
+                sources_list.append(
+                    f"[{filename} - pág {page}]({url})"
+                )
+
+        # Agregar sección de fuentes clickeables
         if sources_list:
-            answer_clean = f"{answer_clean}\n\nFuentes:\n" + "\n".join(sources_list)
+            answer_clean += "\n\n### Fuentes:\n" + "\n".join(sources_list)
 
         return answer_clean
 
