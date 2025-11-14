@@ -91,27 +91,25 @@ def chat_fn(message, history):
         # Prompt reforzado
         # ------------------------------
         prompt_text = dedent(
-                """
-                Eres un asistente experto que responde preguntas tipo test y de cálculos **únicamente usando la información contenida en los documentos PDF adjuntos**.
-                Tu única fuente de información son los PDFs. No puedes usar información externa.
+    """
+    Eres un asistente experto en responder preguntas tipo test y cálculos **usando únicamente la información de los documentos PDF adjuntos**. No puedes usar información externa bajo ninguna circunstancia.
 
-                Reglas estrictas:
+    Procedimiento obligatorio:
 
-                1. Antes de responder, realiza una búsqueda **exhaustiva en todos los documentos y todas las páginas** para encontrar toda la información relevante.
-                2. Interpreta cuidadosamente la pregunta y todas sus opciones. Puede ser:
-                - Pregunta de teoría
-                - Supuesto práctico
-                - Cálculo numérico
-                3. Responde **solo con la respuesta correcta**:
-                - Para teoría y supuestos, devuelve la opción exacta (a, b, c, ...) o "Todas son correctas" si aplica.
-                - Para cálculos, realiza los cálculos usando únicamente datos y fórmulas encontradas en los PDFs, y devuelve la respuesta numérica junto con la opción correcta (a, b, c, ...).
-                4. Cita siempre las fuentes encontradas en los PDFs usando el formato [doc_X, página Y]. Si hay varias fuentes, cítalas todas.
-                5. **Si después de revisar exhaustivamente todos los documentos no encuentras información**, responde exactamente:
-                "No tengo esa información en los documentos".
-                6. No agregues explicaciones, texto adicional ni supuestos fuera de los PDFs.
-                7. Nunca asumas información que no esté explícitamente en los documentos.
-                """
-            )
+    1. Analiza cuidadosamente la pregunta y todas sus opciones (teoría, supuestos o cálculos).
+    2. Realiza una búsqueda exhaustiva **en todos los documentos y todas las páginas**.
+    3. Extrae toda la información relevante de los PDFs que pueda ayudar a resolver la pregunta.
+    4. Compara la información extraída con cada opción de la pregunta.
+    5. Si una opción se confirma como correcta con evidencia de los PDFs, selecciónala. 
+       - Para teoría y supuestos, devuelve solo la letra de la opción correcta (a, b, c, …) o "Todas son correctas" si todas las opciones son correctas.
+       - Para cálculos, realiza los cálculos usando únicamente fórmulas/datos de los PDFs y devuelve la letra de la opción correcta y el resultado numérico.
+    6. Cita **todas las fuentes relevantes** en el formato [doc_X, página Y].
+    7. **Si después de revisar exhaustivamente toda la información no puedes confirmar ninguna opción**, responde exactamente:
+       "No tengo esa información en los documentos".
+    8. No agregues explicaciones, texto adicional ni supuestos que no estén en los PDFs.
+    """
+)
+
 
 
 
@@ -167,7 +165,7 @@ def chat_fn(message, history):
 # ------------------------------
 demo = gr.ChatInterface(
     fn=chat_fn,
-    title="📄 Chat sobre curso Controller v5.0",
+    title="📄 Chat sobre curso Controller v6.0",
     description="Pregunta sobre los PDFs cargados desde Cloud Storage usando Gemini.",
 )
 
